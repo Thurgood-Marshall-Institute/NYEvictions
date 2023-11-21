@@ -1,0 +1,290 @@
+---
+title: "NY Eviction Analysis"
+output: html_document
+date: "2023-10-11"
+---
+
+```{r load packages,echo=FALSE, results=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(ggplot2)
+library(sf)
+library(readxl)
+library(MASS)
+library(pscl)
+```
+
+
+# New York State
+## Demographics of renters and homeowners
+```{r Table of renter and owner units by race, echo=FALSE}
+#Data source: ACS 1-Year Estimates (2022) https://data.census.gov/table/ACSST5Y2021.S2502?q=S2502&g=040XX00US36,36$0500000 
+statedemo <- matrix(c("Black", 1071357, 355267, 716090, "white", 4550566, 3028061, 1522505, "Total", 7774308, 4204337, 3569971), ncol=4, byrow=TRUE)
+colnames(statedemo) <- c("Race","Total occupied housing units","Owner-occupied housing units", "Renter-occupied housing units")
+df1 <- as.data.frame(statedemo)
+remove(statedemo)
+df1$`Total occupied housing units` <- as.numeric(df1$`Total occupied housing units`)
+df1$`Owner-occupied housing units` <- as.numeric(df1$`Owner-occupied housing units`)
+df1$`Renter-occupied housing units` <- as.numeric(df1$`Renter-occupied housing units`)
+df1$`% Owner-occupied` <- df1$`Owner-occupied housing units`/df1$`Total occupied housing units` * 100
+df1$`% Renter-occupied` <- df1$`Renter-occupied housing units`/df1$`Total occupied housing units` * 100
+
+kable(df1, "pipe")
+```
+Two out of every three (67%) Black households in New York State are renters. Put another way, Black New Yorkers are more than twice as likely to be renters than homeowners.
+
+Two out of every three (67%) white households in New York State are homeowners. Put another way, white New Yorkers are twice as likely to be homeowners than renters.
+
+The Black-white homeownership gap in New York State is larger than the nationwide Black-white homeownership gap.
+
+*Sources: https://data.census.gov/table/ACSST1Y2022.S2502?q=S2502&g=040XX00US36,36$0500000 (2022); https://www.osc.state.ny.us/files/reports/pdf/homeownership-rates-in-ny.pdf*
+
+## County-level analysis
+```{r load data, echo=FALSE}
+df2 <- read_xlsx("./County eviction data.xlsx")
+#create variables of interest
+df2$res_evic_rate <- df2$`Residential Evictions`/df2$`Total Renter-occupied housing units`*100
+df2$res_holdover_evic_rate <- df2$`Residential Holdover Evictions`/df2$`Total Renter-occupied housing units`*100
+
+#rename vars
+df2$res_evics <- df2$`Residential Evictions`
+df2$res_holdover_evics <- df2$`Residential Holdover Evictions`
+df2$rental_units <- df2$`Total Renter-occupied housing units`
+
+df2$perc_black_rent <- df2$`Black Renter-occupied housing units`/df2$`Total Renter-occupied housing units`*10
+```
+
+<iframe title="Holdover eviction filings as a percentage of residential eviction filings by county (2022)" aria-label="Map" id="datawrapper-chart-V5Vjv" src="https://datawrapper.dwcdn.net/V5Vjv/2/" scrolling="no" frameborder="0" style="width: 0; min-width: 100% !important; border: none;" height="640" data-external="1"></iframe><script type="text/javascript">!function(){"use strict";window.addEventListener("message",(function(a){if(void 0!==a.data["datawrapper-height"]){var e=document.querySelectorAll("iframe");for(var t in a.data["datawrapper-height"])for(var r=0;r<e.length;r++)if(e[r].contentWindow===a.source){var i=a.data["datawrapper-height"][t]+"px";e[r].style.height=i}}}))}();
+</script>
+
+<iframe title="Holdover eviction filing rates by county (2022)" aria-label="Map" id="datawrapper-chart-mDTpk" src="https://datawrapper.dwcdn.net/mDTpk/4/" scrolling="no" frameborder="0" style="width: 0; min-width: 100% !important; border: none;" height="613" data-external="1"></iframe><script type="text/javascript">!function(){"use strict";window.addEventListener("message",(function(a){if(void 0!==a.data["datawrapper-height"]){var e=document.querySelectorAll("iframe");for(var t in a.data["datawrapper-height"])for(var r=0;r<e.length;r++)if(e[r].contentWindow===a.source){var i=a.data["datawrapper-height"][t]+"px";e[r].style.height=i}}}))}();
+</script>
+
+<iframe title="Black renters as percentage of renter population by county (2021)" aria-label="Map" id="datawrapper-chart-pbzjy" src="https://datawrapper.dwcdn.net/pbzjy/4/" scrolling="no" frameborder="0" style="width: 0; min-width: 100% !important; border: none;" height="640" data-external="1"></iframe><script type="text/javascript">!function(){"use strict";window.addEventListener("message",(function(a){if(void 0!==a.data["datawrapper-height"]){var e=document.querySelectorAll("iframe");for(var t in a.data["datawrapper-height"])for(var r=0;r<e.length;r++)if(e[r].contentWindow===a.source){var i=a.data["datawrapper-height"][t]+"px";e[r].style.height=i}}}))}();
+</script>
+
+```{r plot vars, echo=FALSE, results=FALSE, warning=FALSE, fig.show='hide'}
+plot <-ggplot(df2, mapping=aes(x=perc_black_rent, y=res_holdover_evic_rate)) + geom_point()
+plot
+
+plot <-ggplot(df2, mapping=aes(x=perc_black_rent, y=res_holdover_evics/res_evics)) + geom_point()
+plot
+
+hist(df2$res_evic_rate)
+hist(df2$perc_black_rent)
+```
+```{r calc perc holdover, echo=FALSE, warning=FALSE}
+perc_h <- df2 %>% dplyr::select(res_holdover_evics, res_evics) %>% summarise_all(sum, na.rm=T)
+perc_h$res_holdover_evics/perc_h$res_evics
+```
+Nearly 20% of all residential eviction filings in New York State in 2022 were holdover eviction filings.
+
+
+```{r poisson or neg binomial, echo=FALSE, results=FALSE, fig.show='hide'}
+p_model <- glm(formula=res_evics~perc_black_rent + offset(log(rental_units)), data=df2, family="poisson")
+nb_model <- glm.nb(formula=res_evics~perc_black_rent + offset(log(rental_units)), data=df2)
+
+#Residual plot for Poisson regression
+p_res <- resid(p_model)
+plot(fitted(p_model), p_res, col='steelblue', pch=16,
+     xlab='Predicted Offers', ylab='Standardized Residuals', main='Poisson')
+abline(0,0)
+
+#Residual plot for negative binomial regression 
+nb_res <- resid(nb_model)
+plot(fitted(nb_model), nb_res, col='steelblue', pch=16,
+     xlab='Predicted Offers', ylab='Standardized Residuals', main='Negative Binomial')
+abline(0,0)
+
+#Residuals for negative binomial plot are much smaller, Poisson residuals extend all the way to 60 - suggests that negative binomial is a better fit than Poisson
+
+pchisq(2 * (logLik(nb_model) - logLik(p_model)), df = 1, lower.tail = FALSE)
+
+#Negative binomial offers significantly better fit
+```
+
+```{r analysis, echo=FALSE, warning=FALSE, message=FALSE}
+m <- glm.nb(formula=res_evics~perc_black_rent + offset(log(rental_units)), data=df2)
+print("Residential eviction filing rate")
+est <- exp(cbind(Estimate = coef(m), confint(m)))
+kable(est, "pipe")
+
+m <- glm.nb(formula=res_holdover_evics~perc_black_rent + offset(log(rental_units)), data=df2)
+print("Residential holdover eviction filing rate")
+est <- exp(cbind(Estimate = coef(m), confint(m)))
+kable(est, "pipe")
+
+```
+
+New York counties with a higher percentage of Black renters face a higher rate of total residential eviction filings and residential holdover eviction filings.
+
+A 10-percentage-point increase in the percent of Black renters in a county is associated with a 55% increase in the rate of total residential eviction filings.
+
+A 10-percentage-point increase in the percent of Black renters in a county is associated with a 33% increase in the rate of residential holdover eviction filings.
+
+*Sources: https://app.powerbigov.us/view?r=eyJrIjoiZGE3NzljYmItYTBmZC00OGI2LTliYTgtYzY5ZjI0N2U0MWYxIiwidCI6IjM0NTZmZTkyLWNiZDEtNDA2ZC1iNWEzLTUzNjRiZWMwYTgzMyJ9 (2022); https://data.census.gov/table/ACSST5Y2021.S2502?q=S2502&g=040XX00US36,36$0500000&tp=true (2021)*
+
+## ZIP code-level analysis
+```{r load housing data by zip, echo=FALSE, warning=FALSE, message=FALSE}
+df5 <- read_csv("./ACS 2021 housing data by zip_for analysis.csv")
+
+#select number of renter-occupied housing units and number of Black renter-occupied housing units
+df5 <- df5 %>% dplyr::select(NAME, S2502_C05_001E, S2502_C05_003E)
+
+#clean up vars
+colnames(df5) <- c("ZIP","renter_units","black_renter_units")
+df5$ZIP <- as.numeric(substring(df5$ZIP, 7, 11))
+```
+
+```{r load eviction filing data by zip, echo=FALSE, warning=FALSE, message=FALSE}
+nyszip1 <- read_xlsx("./NYS zip eviction data.xlsx")
+nyszip2 <- read_xlsx("./NYS zip holdover eviction data.xlsx")
+nyszip <- full_join(nyszip1, nyszip2, by="ZIP")
+
+nyszip <- nyszip %>% left_join(df5, by="ZIP")
+
+#create vars of interest
+nyszip$perc_black_rent <- nyszip$black_renter_units/nyszip$renter_units*10
+nyszip$res_evic_rate <- nyszip$residential_filings/nyszip$renter_units*100
+```
+```{r plot vars zip, echo=FALSE, results=FALSE, warning=FALSE, fig.show='hide'}
+plot <-ggplot(nyszip, mapping=aes(x=perc_black_rent, y=res_evic_rate)) + geom_point()
+plot
+
+hist(nyszip$res_evic_rate)
+hist(nyszip$perc_black_rent)
+
+#drop zip codes with fewer than 100 rental units
+nyszip <- nyszip %>% filter(renter_units > 100)
+```
+
+```{r poisson or neg binomial zip, echo=FALSE, results=FALSE, fig.show='hide'}
+p_model <- glm(formula=residential_filings~perc_black_rent + offset(log(renter_units)), data=nyszip, family="poisson")
+nb_model <- glm.nb(formula=residential_filings~perc_black_rent + offset(log(renter_units)), data=nyszip)
+
+#Residual plot for Poisson regression
+p_res <- resid(p_model)
+plot(fitted(p_model), p_res, col='steelblue', pch=16,
+     xlab='Predicted Offers', ylab='Standardized Residuals', main='Poisson')
+abline(0,0)
+
+#Residual plot for negative binomial regression 
+nb_res <- resid(nb_model)
+plot(fitted(nb_model), nb_res, col='steelblue', pch=16,
+     xlab='Predicted Offers', ylab='Standardized Residuals', main='Negative Binomial')
+abline(0,0)
+
+#Residuals for negative binomial plot are much smaller, Poisson residuals extend all the way to 40 - suggests that negative binomial is a better fit than Poisson
+
+pchisq(2 * (logLik(nb_model) - logLik(p_model)), df = 1, lower.tail = FALSE)
+
+#Negative binomial offers significantly better fit
+```
+```{r analysis zip, echo=FALSE, warning=FALSE, message=FALSE}
+m <- glm.nb(formula=residential_filings~perc_black_rent + offset(log(renter_units)), data=nyszip)
+print("Residential eviction filing rate")
+est <- exp(cbind(Estimate = coef(m), confint(m)))
+kable(est, "pipe")
+
+m <- glm.nb(formula=holdover_eviction_filings~perc_black_rent + offset(log(renter_units)), data=nyszip)
+print("Residential holdover eviction filing rate")
+est <- exp(cbind(Estimate = coef(m), confint(m)))
+kable(est, "pipe")
+
+```
+For the ZIP codes in New York State with available data, ZIP codes with a higher percentage of Black renters face a higher rate of total residential eviction filings and residential holdover eviction filings.
+
+A 10-percentage-point increase in the percent of Black renters in a ZIP code is associated with a 19% increase in the rate of total residential eviction filings.
+
+A 10-percentage-point increase in the percent of Black renters in a ZIP code is associated with a 11% increase in the rate of residential holdover eviction filings.
+
+*Sources: https://app.powerbigov.us/view?r=eyJrIjoiZGE3NzljYmItYTBmZC00OGI2LTliYTgtYzY5ZjI0N2U0MWYxIiwidCI6IjM0NTZmZTkyLWNiZDEtNDA2ZC1iNWEzLTUzNjRiZWMwYTgzMyJ9 (2022); https://data.census.gov/table?q=S2502&g=860XX00US10001&tp=true (2021)*
+
+## Pressure to move due to threat of eviction
+```{r load and analyze CHPS data, echo=FALSE, warning=FALSE}
+df3 <- read_xlsx("./New York HPS pressure to move.xlsx")
+
+#make denominator only those that responded to the Q
+df3$denom <- df3$total-df3$no_report
+df3$perc_threat_eviction <- df3$threat_eviction/df3$denom*100
+
+#create table showing percent threatened with eviction
+df3 <- df3 %>% dplyr::select(race, perc_threat_eviction) %>% filter(!is.na(perc_threat_eviction))
+
+kable(df3, "pipe")
+```
+Based on most recent data from the U.S. Census Household Pulse Survey (September 20-October 2, 2023), 6.2% of Black residents in New York State report that they have felt pressure to move in the last six months because they were threatened with eviction or told to leave by their landlord. This is compared to just 1.4% of white residents in New York State who report that they have felt pressure to move in the last six months because they were threatened with eviction or told to leave by their landlord. Put another way, Black New Yorkers are 4.6 times as likely to feel pressured to move due to threat of eviction as white New Yorkers.
+
+*Source: https://www.census.gov/data/tables/2023/demo/hhp/hhp62.html (Table 5)*
+
+# New York City
+## ZIP code-level analysis
+```{r load eviction data, echo=FALSE, warning=FALSE, message=FALSE}
+df4 <- read_csv("./NYC Evictions_2022.csv")
+
+#restrict to residential evictions and group by zip code
+df4 <- df4 %>% filter(`Residential/Commercial`=="Residential") %>% group_by(`Eviction Postcode`) %>% summarize(count=n())
+colnames(df4) <- c("ZIP", "evictions")
+```
+
+```{r merge and analyze, echo=FALSE, warning=FALSE}
+df4 <- df4 %>% left_join(df5, by="ZIP")
+
+write.csv(df4, "./NYC eviction data by zip_for map.csv")
+
+#create vars of interest
+df4$res_evic_rate <- df4$evictions/df4$renter_units*100
+df4$perc_black_rent <- df4$black_renter_units/df4$renter_units*10
+```
+
+<iframe title="Residential eviction rates by ZIP code (2022)" aria-label="Map" id="datawrapper-chart-s4qvt" src="https://datawrapper.dwcdn.net/s4qvt/3/" scrolling="no" frameborder="0" style="width: 0; min-width: 100% !important; border: none;" height="712" data-external="1"></iframe><script type="text/javascript">!function(){"use strict";window.addEventListener("message",(function(a){if(void 0!==a.data["datawrapper-height"]){var e=document.querySelectorAll("iframe");for(var t in a.data["datawrapper-height"])for(var r=0;r<e.length;r++)if(e[r].contentWindow===a.source){var i=a.data["datawrapper-height"][t]+"px";e[r].style.height=i}}}))}();
+</script>
+
+<iframe title="Black renters as percentage of renter population by ZIP code (2021)" aria-label="Map" id="datawrapper-chart-Z6kbf" src="https://datawrapper.dwcdn.net/Z6kbf/2/" scrolling="no" frameborder="0" style="width: 0; min-width: 100% !important; border: none;" height="766" data-external="1"></iframe><script type="text/javascript">!function(){"use strict";window.addEventListener("message",(function(a){if(void 0!==a.data["datawrapper-height"]){var e=document.querySelectorAll("iframe");for(var t in a.data["datawrapper-height"])for(var r=0;r<e.length;r++)if(e[r].contentWindow===a.source){var i=a.data["datawrapper-height"][t]+"px";e[r].style.height=i}}}))}();
+</script>
+
+```{r plot vars nyc, echo=FALSE, results=FALSE, warning=FALSE, fig.show='hide'}
+plot <-ggplot(df4, mapping=aes(x=perc_black_rent, y=res_evic_rate)) + geom_point()
+plot
+
+hist(df4$res_evic_rate)
+hist(df4$perc_black_rent)
+```
+
+```{r poisson or neg binomial nyc, echo=FALSE, results=FALSE, fig.show='hide'}
+p_model <- glm(formula=evictions~perc_black_rent + offset(log(renter_units)), data=df4, family="poisson")
+nb_model <- glm.nb(formula=evictions~perc_black_rent + offset(log(renter_units)), data=df4)
+
+#Residual plot for Poisson regression
+p_res <- resid(p_model)
+plot(fitted(p_model), p_res, col='steelblue', pch=16,
+     xlab='Predicted Offers', ylab='Standardized Residuals', main='Poisson')
+abline(0,0)
+
+#Residual plot for negative binomial regression 
+nb_res <- resid(nb_model)
+plot(fitted(nb_model), nb_res, col='steelblue', pch=16,
+     xlab='Predicted Offers', ylab='Standardized Residuals', main='Negative Binomial')
+abline(0,0)
+
+#Residuals for negative binomial plot less spread out - suggests that negative binomial is a better fit than Poisson
+
+pchisq(2 * (logLik(nb_model) - logLik(p_model)), df = 1, lower.tail = FALSE)
+
+#Negative binomial offers significantly better fit
+```
+
+```{r analysis nyc, echo=FALSE, warning=FALSE, message=FALSE}
+m <- glm.nb(formula=evictions~perc_black_rent + offset(log(renter_units)), data=df4)
+print("Residential eviction rate")
+est <- exp(cbind(Estimate = coef(m), confint(m)))
+kable(est, "pipe")
+
+```
+In New York City, zip codes with a higher percentage of Black renters face a higher rate of residential evictions.
+
+A 10-percentage-point increase in the percent of Black renters in a zip code is associated with a 17% increase in the rate of residential evictions.
+
+*Sources: https://data.cityofnewyork.us/City-Government/Evictions/6z8x-wfk4 (2022); https://data.census.gov/table?q=S2502&g=860XX00US10001&tp=true (2021)*
+
